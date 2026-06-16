@@ -1,0 +1,455 @@
+// ============================================================================
+// SYSTEM ENGINE CONFIGURATIONS V1.6.0 (ADAPTIVE AUTO-THROTTLING CORE)
+// ============================================================================
+const CONFIG = {
+    mapWidth: 1500,
+    mapLimit: 750,         
+    chunkSize: 150,        // Matriks Dunia 10x10 Chunk
+    chunksPerRow: 10,
+    normalSpeed: 0.11,     
+    sprintSpeed: 0.22,     // Kecepatan lari stabil 5.5 m/s
+    totalMonsterWave: 100, // Simulasi Wave besar (Maksimal target tewas per wave)
+    pohonPerChunk: 35      
+};
+
+// DYNAMIC PERFORMANCE STATE VARIABLES (Sesuai seluruh poin saran kamu)
+let STATE = {
+    currentRenderDistance: 250, // Default awal jarak pandang
+    currentResolutionScale: 1.0, // Default resolusi penuh 100%
+    maxActiveAICap: 25,         // Sesuai petunjuk: Hanya 25 AI aktif menyerang, sisanya tidur!
+    fps: 60
+};
+
+// INITIALIZE WEBGL ENGINE & FOG BOUNDARY
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 400);
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.BasicShadowMap; // Format bayangan teringan
+document.body.appendChild(renderer.domElement);
+
+const controls = new THREE.PointerLockControls(camera, renderer.domElement);
+
+// SINGLE SHADOW LIGHT: Membatasi agar tidak terjadi tabrakan overlap multi-light
+const flashlight = new THREE.SpotLight(0xffffff, 5, 75, Math.PI / 6, 0.5, 1.2);
+flashlight.castShadow = true;
+flashlight.shadow.mapSize.width = 512;  
+flashlight.shadow.mapSize.height = 512;
+camera.add(flashlight);
+flashlight.target.position.set(0, 0, -1);
+camera.add(flashlight.target);
+scene.add(camera);
+
+// FLOOR MESH
+const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(1600, 1600), 
+    new THREE.MeshStandardMaterial({ color: 0x030603, roughness: 1.0 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// ============================================================================
+// CHUNK ENGINE MODULE (DENGAN REWRITE SISTEM DYNAMIC RENDER JARAk)
+// ============================================================================
+class AdaptiveChunkManager {
+    constructor() {
+        this.chunks = {};
+        this.pohonGeometry = new THREE.CylinderGeometry(0.2, 0.4, 8, 4); // Low Poly Cylinder
+        this.pohonMaterial = new THREE.MeshStandardMaterial({ color: 0x101710, roughness: 1.0 });
+        this.buildGrid();
+    }
+
+    buildGrid() {
+        for (let xIdx = 0; xIdx < CONFIG.chunksPerRow; xIdx++) {
+            for (let zIdx = 0; zIdx < CONFIG.chunksPerRow; zIdx++) {
+                const chunkKey = `${xIdx}_${zIdx}`;
+                const startX = -CONFIG.mapLimit + (xIdx * CONFIG.chunkSize);
+                const startZ = -CONFIG.mapLimit + (zIdx * CONFIG.chunkSize);
+                
+                const positions = [];
+                for (let p = 0; p < CONFIG.pohonPerChunk; p++) {
+                    let px = startX + Math.random() * CONFIG.chunkSize;
+                    let pz = startZ + Math.random() * CONFIG.chunkSize;
+                    if (Math.abs(px) > 20 || Math.abs(pz) > 20) {
+                        positions.push(new THREE.Vector3(px, 4, pz));
+                    }
+                }
+                
+                const instMesh = new THREE.InstancedMesh(this.pohonGeometry, this.pohonMaterial, positions.length);
+                instMesh.castShadow = false;
+                instMesh.receiveShadow = false;
+                
+                const dummy = new THREE.Object3D();
+                positions.forEach((pos, idx) => {
+                    dummy.position.copy(pos);
+                    dummy.updateMatrix();
+                    instMesh.setMatrixAt(idx, dummy.matrix);
+                });
+                
+                this.chunks[chunkKey] = {
+                    mesh: instMesh,
+                    center: new THREE.Vector2(startX + CONFIG.chunkSize/2, startZ + CONFIG.chunkSize/2),
+                    isLoaded: false
+                };
+            }
+        }
+    }
+
+    updateGrid(playerX, playerZ) {
+        // DYNAMIC RENDER DISTANCE: Penentuan muat chunk berubah mengikuti STATE visual terbaru!
+        for (let key in this.chunks) {
+            const chunk = this.chunks[key];
+            const distance = chunk.center.distanceTo(new THREE.Vector2(playerX, playerZ));
+            
+            if (distance <= STATE.currentRenderDistance) {
+                if (!chunk.isLoaded) {
+                    scene.add(chunk.mesh);
+                    chunk.isLoaded = true;
+                }
+                // SHADOW QUALITY OTOMATIS: Pohon hanya diberi bayangan jika player sangat dekat
+                chunk.mesh.castShadow = (distance < 70 && renderer.shadowMap.enabled);
+            } else {
+                if (chunk.isLoaded) {
+                    scene.remove(chunk.mesh);
+                    chunk.isLoaded = false;
+                }
+            }
+        }
+    }
+}
+const chunkManager = new AdaptiveChunkManager();
+
+// STRUCTURE REGIONAL DATA 
+const POI_STRUCTURES = [
+    { name: "RUMAH", pos: new THREE.Vector3(-100, 4, -150), size: [16, 8, 16], color: 0x322929, mesh: null, rad: 10.0 },
+    { name: "MENARA", pos: new THREE.Vector3(250, 10, -350), size: [5, 20, 5], color: 0x1d211d, mesh: null, rad: 5.0 },
+    { name: "GUDANG", pos: new THREE.Vector3(400, 5, 200), size: [25, 10, 20], color: 0x3d3734, mesh: null, rad: 15.0 }
+];
+
+const updateBuildings = (pX, pZ) => {
+    POI_STRUCTURES.forEach(b => {
+        const distance = new THREE.Vector2(b.pos.x, b.pos.z).distanceTo(new THREE.Vector2(pX, pZ));
+        if (distance <= STATE.currentRenderDistance) {
+            if (!b.mesh) {
+                b.mesh = new THREE.Mesh(new THREE.BoxGeometry(...b.size), new THREE.MeshStandardMaterial({ color: b.color, roughness: 1.0 }));
+                b.mesh.position.copy(b.pos);
+                scene.add(b.mesh);
+            }
+            b.mesh.castShadow = (distance < 100);
+        } else {
+            if (b.mesh) { scene.remove(b.mesh); b.mesh = null; }
+        }
+    });
+};
+
+// ============================================================================
+// MONSTER ENGINE MANAGEMENT DENGAN STRUKTUR OBJECT POOLING & SLEEP SYSTEM
+// ============================================================================
+class PooledMonster {
+    constructor() {
+        this.mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 3, 4), new THREE.MeshBasicMaterial({ color: 0x990000 }));
+        this.mesh.visible = false;
+        scene.add(this.mesh);
+
+        this.isActive = false;
+        this.isSleeping = true;
+        this.hp = 3;
+        this.speed = 0.08;
+        this.collisionRadius = 1.3;
+    }
+
+    spawn(x, z) {
+        this.mesh.position.set(x, 1.5, z);
+        this.hp = 3;
+        this.isActive = true;
+        this.isSleeping = false;
+        this.mesh.visible = true;
+    }
+
+    despawn() {
+        this.isActive = false;
+        this.isSleeping = true;
+        this.mesh.visible = false;
+    }
+
+    executeAI(playerPos) {
+        if (!this.isActive) return;
+        
+        const distance = this.mesh.position.distanceTo(playerPos);
+
+        // MONSTER SLEEPING SYSTEM: Matikan total di luar batas jangkauan (Saran No. 2)
+        if (distance > 150) {
+            if (!this.isSleeping) {
+                this.isSleeping = true;
+                this.mesh.visible = false;
+            }
+            return; 
+        }
+
+        this.isSleeping = false;
+        this.mesh.visible = true;
+
+        this.mesh.lookAt(playerPos.x, this.mesh.position.y, playerPos.z);
+        const dir = new THREE.Vector3().subVectors(playerPos, this.mesh.position).normalize();
+        this.mesh.position.addScaledVector(dir, this.speed);
+    }
+}
+
+// Inisialisasi Alokasi Memori Tetap di Awal (Maksimal 50 Unit di Pool global)
+const monsterPool = [];
+for (let i = 0; i < 50; i++) {
+    monsterPool.push(new PooledMonster());
+}
+
+// ============================================================================
+// SYSTEM: DYNAMIC PERFORMANCE THROTTLER MANAGER (OTAK UTAMA ADAPTIVE GAME)
+// ============================================================================
+let frameCount = 0;
+let lastTime = performance.now();
+
+const runPerformanceAutoThrottling = () => {
+    frameCount++;
+    const time = performance.now();
+    
+    if (time >= lastTime + 1000) {
+        STATE.fps = Math.round((frameCount * 1000) / (time - lastTime));
+        frameCount = 0;
+        lastTime = time;
+
+        // TAMPILKAN METRIK FPS PADA PANEL MONITOR HUD
+        const fpsTxt = document.getElementById('fps-counter');
+        fpsTxt.innerText = `FPS: ${STATE.fps}`;
+
+        // EVALUASI STRATEGI ADAPTIF BERDASARKAN FRAME RATE TERKINI (Saran Emas Kamu!)
+        if (STATE.fps > 55) {
+            // KONDISI AMAN: Maksimalkan Keindahan Visual Game
+            STATE.currentRenderDistance = 250;
+            STATE.currentResolutionScale = 1.0;
+            STATE.maxActiveAICap = 35; // Izinkan lebih banyak monster bangun jika lancar
+            renderer.shadowMap.enabled = true;
+            fpsTxt.style.color = "#00ff44";
+        } 
+        else if (STATE.fps <= 55 && STATE.fps >= 40) {
+            // KONDISI SEDANG: Turunkan Jarak Pandang & Kualitas Bayangan Semu
+            STATE.currentRenderDistance = 180;
+            STATE.currentResolutionScale = 0.9; // Turunkan Skala Resolusi Internal ke 90%
+            STATE.maxActiveAICap = 25; 
+            renderer.shadowMap.enabled = true;
+            fpsTxt.style.color = "#ffcc00";
+        } 
+        else if (STATE.fps < 40) {
+            // KONDISI KRITIS / LAG: Penghematan Ekstrem Diaktifkan!
+            STATE.currentRenderDistance = 120;
+            STATE.currentResolutionScale = 0.75; // Dorong Resolusi Jatuh Ke 75% demi kestabilan frame rate
+            STATE.maxActiveAICap = 15;          // Batasi Hanya 15 Monster yang Boleh Memproses AI
+            renderer.shadowMap.enabled = false; // MATIKAN BAYANGAN DINAMIS TOTAL (Saran No. 5 & 8)
+            fpsTxt.style.color = "#ff3333";
+        }
+
+        // Terapkan Dynamic Resolution internal pixel rasio ke canvas WebGL
+        renderer.setPixelRatio(window.devicePixelRatio * STATE.currentResolutionScale);
+        camera.far = STATE.currentRenderDistance + 30;
+        camera.updateProjectionMatrix();
+        scene.fog.far = STATE.currentRenderDistance;
+
+        // Update Text Status Logika Engine
+        document.getElementById('engine-status').innerText = `Scale: ${Math.round(STATE.currentResolutionScale*100)}% | Dist: ${STATE.currentRenderDistance}m`;
+    }
+};
+
+// ============================================================================
+// CORE SYSTEM CONSOLE IN-GAME WEAPON MECHANICS
+// ============================================================================
+const weaponGroup = new THREE.Group();
+const barrelMesh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.7), new THREE.MeshBasicMaterial({ color: 0x111111 }));
+weaponGroup.add(barrelMesh); camera.add(weaponGroup); weaponGroup.position.set(0.3, -0.35, -0.6);
+
+class GameManager {
+    constructor() {
+        this.gameState = 'MENU';
+        this.hp = 100; this.stamina = 100;
+        this.ammo = 30; this.maxAmmo = 30;
+        this.kills = 0;
+        
+        this.keys = { w: false, a: false, s: false, d: false, shift: false };
+        this.prevPlayerPos = new THREE.Vector3();
+
+        this.setupMenuTriggers();
+    }
+
+    setupMenuTriggers() {
+        document.getElementById('btn-play-normal').addEventListener('click', () => this.bootUpGame());
+        
+        window.addEventListener('keydown', (e) => {
+            if (this.gameState !== 'PLAYING') return;
+            const k = e.key.toLowerCase();
+            if (['w','a','s','d'].includes(k)) this.keys[k] = true;
+            if (e.key === 'Shift') this.keys.shift = true;
+            if (k === 'r') this.reloadWeapon();
+        });
+        window.addEventListener('keyup', (e) => {
+            const k = e.key.toLowerCase();
+            if (['w','a','s','d'].includes(k)) this.keys[k] = false;
+            if (e.key === 'Shift') this.keys.shift = false;
+        });
+        window.addEventListener('mousedown', (e) => {
+            if (this.gameState === 'PLAYING' && e.button === 0 && controls.isLocked) this.fireActiveWeapon();
+        });
+    }
+
+    bootUpGame() {
+        this.gameState = 'PLAYING';
+        document.getElementById('main-menu').classList.add('hidden');
+        document.getElementById('hud').classList.remove('hidden');
+        controls.lock();
+        this.generateActiveWaveMonsters();
+    }
+
+    generateActiveWaveMonsters() {
+        // Matikan seluruh sisa data monster lawas
+        monsterPool.forEach(m => m.despawn());
+        
+        // BATASI MONSTER AKTIF: Meskipun total wave ada banyak, yang di-spawn aktif dibatasi CAP! (Saran No. 4 & 9)
+        for (let i = 0; i < STATE.maxActiveAICap; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const sX = camera.position.x + Math.cos(angle) * (60 + Math.random()*60);
+            const sZ = camera.position.z + Math.sin(angle) * (60 + Math.random()*60);
+            monsterPool[i].spawn(sX, sZ);
+        }
+    }
+
+    fireActiveWeapon() {
+        if (this.ammo <= 0) return;
+        this.ammo--;
+        document.getElementById('weap-ammo').innerText = `AMMO: ${this.ammo} / ${this.maxAmmo}`;
+
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+        
+        const activeTargets = monsterPool.filter(m => m.isActive && !m.isSleeping).map(m => m.mesh);
+        const intersections = raycaster.intersectObjects(activeTargets);
+
+        if (intersections.length > 0) {
+            let hitMesh = intersections[0].object;
+            let monster = monsterPool.find(m => m.mesh === hitMesh);
+            if (monster) {
+                monster.hp -= 1.0;
+                if (monster.hp <= 0) {
+                    this.kills++;
+                    // DAUR ULANG DITEMPAT (RECYCLE POOL): Geser koordinat instan tanpa beban memory crash
+                    const angle = Math.random() * Math.PI * 2;
+                    monster.spawn(camera.position.x + Math.cos(angle)*100, camera.position.z + Math.sin(angle)*100);
+                }
+            }
+        }
+    }
+
+    reloadWeapon() {
+        document.getElementById('weap-ammo').innerText = "RELOADING...";
+        setTimeout(() => {
+            this.ammo = this.maxAmmo;
+            document.getElementById('weap-ammo').innerText = `AMMO: ${this.ammo} / ${this.maxAmmo}`;
+        }, 1200);
+    }
+
+    handleSphereCollisions() {
+        const px = camera.position.x;
+        const pz = camera.position.z;
+
+        // SPHERE COLLISION PADA MONSTER AKTIF
+        monsterPool.forEach(m => {
+            if (!m.isActive || m.isSleeping) return;
+            const dist = Math.sqrt((px - m.mesh.position.x)**2 + (pz - m.mesh.position.z)**2);
+            if (dist < m.collisionRadius) {
+                camera.position.set(this.prevPlayerPos.x, camera.position.y, this.prevPlayerPos.z);
+                this.hp = Math.max(0, this.hp - 0.2);
+                document.getElementById('hp-txt').innerText = Math.ceil(this.hp);
+                document.getElementById('hp-bar').style.width = `${this.hp}%`;
+
+                if (this.hp <= 0) {
+                    controls.unlock();
+                    alert("GAME OVER! Total Kills kamu: " + this.kills);
+                    window.location.reload();
+                }
+            }
+        });
+
+        // SPHERE COLLISION PADA BANGUNAN STATIS
+        POI_STRUCTURES.forEach(b => {
+            if (!b.mesh) return;
+            const dist = Math.sqrt((px - b.pos.x)**2 + (pz - b.pos.z)**2);
+            if (dist < b.rad) {
+                camera.position.set(this.prevPlayerPos.x, camera.position.y, this.prevPlayerPos.z);
+            }
+        });
+    }
+
+    runTickUpdate() {
+        if (this.gameState !== 'PLAYING' || !controls.isLocked) return;
+
+        this.prevPlayerPos.copy(camera.position);
+        
+        // KECEPATAN LARI SESUAI PERMINTAAN: SPRINT STABIL DI 5.5 M/S
+        let moveSpeed = (this.keys.shift && this.stamina > 10) ? CONFIG.sprintSpeed : CONFIG.normalSpeed;
+
+        if (this.keys.shift && (this.keys.w || this.keys.a || this.keys.s || this.keys.d)) {
+            this.stamina = Math.max(0, this.stamina - 0.35);
+        } else {
+            this.stamina = Math.min(100, this.stamina + 0.2);
+        }
+        document.getElementById('stamina-bar').style.width = `${this.stamina}%`;
+
+        if (this.keys.w) controls.moveForward(moveSpeed);
+        if (this.keys.s) controls.moveForward(-moveSpeed);
+        if (this.keys.a) controls.moveRight(-moveSpeed);
+        if (this.keys.d) controls.moveRight(moveSpeed);
+
+        camera.position.x = Math.max(-CONFIG.mapLimit, Math.min(CONFIG.mapLimit, camera.position.x));
+        camera.position.z = Math.max(-CONFIG.mapLimit, Math.min(CONFIG.mapLimit, camera.position.z));
+        camera.position.y = 1.8;
+
+        // Pembaruan Sistem Grid Objek Dunia
+        chunkManager.updateGrid(camera.position.x, camera.position.z);
+        updateBuildings(camera.position.x, camera.position.z);
+        
+        // Pembaruan Logika AI Per-Frame Berdasarkan Batas Kuota Cap Monster Aktif
+        let currentActiveAICount = 0;
+        monsterPool.forEach(m => {
+            if (m.isActive && !m.isSleeping) currentActiveAICount++;
+            m.executeAI(camera.position);
+        });
+        
+        this.handleSphereCollisions();
+
+        // INTEGRASI PROFILING MONITOR: Membaca internal renderer.info Three.js (Saran No. 5)
+        document.getElementById('three-drawcalls').innerText = `Draw Calls: ${renderer.info.render.calls}`;
+        document.getElementById('three-tris').innerText = `Triangles: ${renderer.info.render.triangles}`;
+        document.getElementById('geo-info').innerText = `XYZ: ${Math.floor(camera.position.x)}, ${Math.floor(camera.position.z)} | Active AI: ${currentActiveAICount}`;
+    }
+}
+
+const gameManager = new GameManager();
+
+// ============================================================================
+// CONTINUOUS MASTER RENDER ENGINE LOOP DENGAN METRIK SINKRONISASI FPS AUTO
+// ============================================================================
+const masterLoop = () => {
+    requestAnimationFrame(masterLoop);
+    
+    // Jalankan sistem adaptif performa penurunan otomatis saat loop berjalan
+    if (gameManager.gameState === 'PLAYING') {
+        runPerformanceAutoThrottling();
+    }
+    
+    gameManager.runTickUpdate();
+    renderer.render(scene, camera);
+};
+masterLoop();
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
