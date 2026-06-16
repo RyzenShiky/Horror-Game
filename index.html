@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terror Hutan 3D V1.6.0 - Auto Adaptive Engine</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+</head>
+<body>
+
+    <div id="crosshair">+</div>
+    <div id="blood-vignette"></div>
+    
+    <div id="perf-debug">
+        <div id="fps-counter" style="color: #00ff00; font-weight: bold; font-size: 1.1rem;">FPS: --</div>
+        <div id="engine-status" style="color: #ffcc00; margin-bottom: 5px;">Scale: 100% | Dist: 250m</div>
+        <div class="divider"></div>
+        <div id="three-drawcalls">Draw Calls: 0</div>
+        <div id="three-tris">Triangles: 0</div>
+        <div id="geo-info">XYZ: 0, 0 | Active AI: 0</div>
+    </div>
+
+    <div id="main-menu">
+        <div id="menu-background"></div>
+        <div class="menu-content-layer">
+            <div class="menu-title">TERROR HUTAN 3D<br><span class="subtitle">ADAPTIVE PERFORMANCE ENGINE (V1.6.0)</span></div>
+            <div class="menu-buttons">
+                <button id="btn-play-normal" class="wood-button">START SURVIVAL (WAVE 8)</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="hud" class="hidden">
+        <div id="wave-timer-container">
+            <div id="wave-text">WAVE 1 / 8</div>
+            <div id="modifier-text" style="color: #ffcc00; font-size: 0.8rem; margin-top: 3px;">AUTO THROTTLING ACTIVE</div>
+        </div>
+
+        <div id="stats-container">
+            <div class="hud-bar-container">
+                <label>HEALTH: <span id="hp-txt">100</span></label>
+                <div class="bar"><div id="hp-bar" style="width: 100%; background: #ff3333;"></div></div>
+            </div>
+            <div class="hud-bar-container">
+                <label>STAMINA (5.5 m/s):</label>
+                <div class="bar"><div id="stamina-bar" style="width: 100%; background: #00ffcc;"></div></div>
+            </div>
+        </div>
+
+        <div id="weapon-ui">
+            <div id="weap-name">RIFLE</div>
+            <div id="weap-ammo">AMMO: 30 / 30</div>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
