@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Terror Hutan 3D V1.6.0 - Auto Adaptive Engine</title>
+    <title>Terror Hutan 3D V1.7.0 - Full Features & Adaptive Engine</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
@@ -13,22 +13,55 @@
     <div id="crosshair">+</div>
     <div id="blood-vignette"></div>
     
-    <div id="perf-debug">
+    <div id="perf-debug" class="hidden">
         <div id="fps-counter" style="color: #00ff00; font-weight: bold; font-size: 1.1rem;">FPS: --</div>
         <div id="engine-status" style="color: #ffcc00; margin-bottom: 5px;">Scale: 100% | Dist: 250m</div>
         <div class="divider"></div>
         <div id="three-drawcalls">Draw Calls: 0</div>
         <div id="three-tris">Triangles: 0</div>
         <div id="geo-info">XYZ: 0, 0 | Active AI: 0</div>
+        <div style="color: #888; font-size: 0.7rem; margin-top: 5px;">Tekan [O] untuk Setting</div>
     </div>
 
     <div id="main-menu">
         <div id="menu-background"></div>
         <div class="menu-content-layer">
-            <div class="menu-title">TERROR HUTAN 3D<br><span class="subtitle">ADAPTIVE PERFORMANCE ENGINE (V1.6.0)</span></div>
+            <div class="menu-title">TERROR HUTAN 3D<br><span class="subtitle">ADAPTIVE PERFORMANCE ENGINE (V1.7.0)</span></div>
             <div class="menu-buttons">
-                <button id="btn-play-normal" class="wood-button">START SURVIVAL (WAVE 8)</button>
+                <button id="btn-play-normal" class="wood-button">START SURVIVAL</button>
             </div>
+        </div>
+    </div>
+
+    <div id="game-over-screen" class="hidden">
+        <div class="game-over-content">
+            <h1 id="end-title">KAMU TEWAS</h1>
+            <p id="end-stats">Kills: 0 | Wave Survival: 1</p>
+            <div class="end-buttons">
+                <button id="btn-restart" class="wood-button-small">MAIN LAGI</button>
+                <button id="btn-to-menu" class="wood-button-small">MENU UTAMA</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="setting-menu" class="hidden">
+        <div class="setting-content">
+            <h2>PENGATURAN ENGINE</h2>
+            <div class="divider"></div>
+            <div class="setting-row">
+                <label>Senter / Flashlight:</label>
+                <input type="checkbox" id="setting-flashlight" checked>
+            </div>
+            <div class="setting-row">
+                <label>Sensitivitas Mouse:</label>
+                <input type="range" id="setting-sens" min="1" max="10" value="5">
+            </div>
+            <div class="setting-row">
+                <label>Auto-Throttling (FPS Guard):</label>
+                <input type="checkbox" id="setting-adaptive" checked>
+            </div>
+            <p style="font-size: 0.75rem; color: #666; margin-top: 15px;">Tekan kembali [O] atau klik Resume untuk lanjut bermain.</p>
+            <button id="btn-resume-setting" class="wood-button-small" style="margin-top: 10px; width: 100%;">RESUME</button>
         </div>
     </div>
 
