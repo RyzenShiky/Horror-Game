@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Terror Hutan 3D V1.7.0 - Full Features & Adaptive Engine</title>
+    <title>Terror Hutan 3D V1.8.0 - GLTF Avatar & Weapon Integration</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
 
@@ -20,15 +21,15 @@
         <div id="three-drawcalls">Draw Calls: 0</div>
         <div id="three-tris">Triangles: 0</div>
         <div id="geo-info">XYZ: 0, 0 | Active AI: 0</div>
-        <div style="color: #888; font-size: 0.7rem; margin-top: 5px;">Tekan [O] untuk Setting</div>
+        <div id="loader-status" style="color: #00eeff;">Asset: Loading...</div>
     </div>
 
     <div id="main-menu">
         <div id="menu-background"></div>
         <div class="menu-content-layer">
-            <div class="menu-title">TERROR HUTAN 3D<br><span class="subtitle">ADAPTIVE PERFORMANCE ENGINE (V1.7.0)</span></div>
+            <div class="menu-title">TERROR HUTAN 3D<br><span class="subtitle">GLTF INTEGRATION ENGINE (V1.8.0)</span></div>
             <div class="menu-buttons">
-                <button id="btn-play-normal" class="wood-button">START SURVIVAL</button>
+                <button id="btn-play-normal" class="wood-button" disabled>LOADING 3D MODEL...</button>
             </div>
         </div>
     </div>
@@ -60,7 +61,6 @@
                 <label>Auto-Throttling (FPS Guard):</label>
                 <input type="checkbox" id="setting-adaptive" checked>
             </div>
-            <p style="font-size: 0.75rem; color: #666; margin-top: 15px;">Tekan kembali [O] atau klik Resume untuk lanjut bermain.</p>
             <button id="btn-resume-setting" class="wood-button-small" style="margin-top: 10px; width: 100%;">RESUME</button>
         </div>
     </div>
