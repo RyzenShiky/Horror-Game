@@ -1,5 +1,5 @@
 // ============================================================================
-// SYSTEM ENGINE CONFIGURATIONS V1.9.0 (F5 MULTI-VIEW & RETRO COMPATIBLE)
+// SYSTEM ENGINE CONFIGURATIONS V1.9.1 (F5 BUG FIX & SAFETY LOADER GUARD)
 // ============================================================================
 const CONFIG = {
     mapWidth: 1500,
@@ -35,7 +35,7 @@ const controls = new THREE.PointerLockControls(camera, renderer.domElement);
 const playerGroup = new THREE.Group(); 
 scene.add(playerGroup);
 
-// SENTER UTAMA (Tetap menempel di kamera agar arah cahayanya mengikuti pandangan mata)
+// SENTER UTAMA
 const flashlight = new THREE.SpotLight(0xffffff, 5, 75, Math.PI / 6, 0.5, 1.2);
 flashlight.castShadow = true;
 flashlight.shadow.mapSize.width = 512;  
@@ -68,8 +68,6 @@ gltfLoader.load(
     (gltf) => {
         playerAvatar = gltf.scene;
         playerAvatar.scale.set(1, 1, 1); 
-        
-        // Posisikan pusat poros kaki model tepat di dasar tanah (y = 0)
         playerAvatar.position.set(0, 0, 0); 
         
         playerAvatar.traverse((child) => {
@@ -79,8 +77,6 @@ gltfLoader.load(
             }
         });
 
-        // Masukkan model avatar ke kontainer playerGroup (bukan langsung ditempel ke kamera)
-        // Cara ini wajib digunakan agar kita bisa memindahkan kamera menjauhi tubuh karakter saat F5
         playerGroup.add(playerAvatar);
 
         if (gltf.animations && gltf.animations.length > 0) {
@@ -94,12 +90,16 @@ gltfLoader.load(
         playBtn.removeAttribute('disabled');
         document.getElementById('loader-status').innerText = "Asset: Adventurer Ready";
         
-        // Inisialisasi awal posisi kamera pertama kali
+        // POSISIKAN INTEGRASI AWAL SETELAH MODEL BENAR-BENAR SELESAI DIMUAT
         updateCameraViewMode();
     },
     (xhr) => {
-        const percent = Math.round((xhr.loaded / xhr.total) * 100);
-        document.getElementById('btn-play-normal').innerText = `LOADING MODEL (${percent}%)`;
+        if(xhr.total > 0) {
+            const percent = Math.round((xhr.loaded / xhr.total) * 100);
+            document.getElementById('btn-play-normal').innerText = `LOADING MODEL (${percent}%)`;
+        } else {
+            document.getElementById('btn-play-normal').innerText = `FETCHING 3D MODEL...`;
+        }
     },
     (error) => {
         console.error('Gagal memuat model 3D Avatar:', error);
@@ -108,33 +108,30 @@ gltfLoader.load(
     }
 );
 
-// FUNGSI UTAMA: MENGATUR POSISI DAN ROTASI KAMERA BERDASARKAN MODE F5
+// FIX FIX: MENAMBAHKAN VALIDASI PENGAMAN AGAR TIDAK CRASH JIKA AVATAR BELUM READY
 const updateCameraViewMode = () => {
-    if (!playerAvatar) return;
+    // PROTEKSI UTAMA: Jangan eksekusi fungsi jika model 3D belum selesai masuk ke scene!
+    if (!playerAvatar) return; 
 
-    // Setel ulang semua rotasi internal objek kamera pembantu
     camera.position.set(0, 0, 0);
     playerAvatar.rotation.set(0, 0, 0);
-    weaponGroup.position.set(0.25, -0.25, -0.5); // Reset letak senjata default FPS
+    weaponGroup.position.set(0.25, -0.25, -0.5); 
 
     if (STATE.cameraMode === 0) {
-        // 0: FIRST PERSON VIEW
-        playerAvatar.visible = false; // Sembunyikan badan agar kepala kita tidak menutupi kamera sendiri
+        playerAvatar.visible = false; 
         weaponGroup.visible = true;
-        camera.position.set(0, 1.8, 0); // Mata kamera ada di atas kepala model
+        camera.position.set(0, 1.8, 0); 
     } 
     else if (STATE.cameraMode === 1) {
-        // 1: THIRD PERSON BACK (Kamera di belakang punggung)
         playerAvatar.visible = true; 
-        weaponGroup.visible = false; // Sembunyikan kotak moncong senjata primitif lama agar rapi
-        camera.position.set(0, 2.3, 3.5); // Mundur 3.5 meter dan sedikit ke atas kepala
+        weaponGroup.visible = false; 
+        camera.position.set(0, 2.3, 3.5); 
     } 
     else if (STATE.cameraMode === 2) {
-        // 2: THIRD PERSON FRONT (Kamera menghadap wajah skin karakter)
         playerAvatar.visible = true;
         weaponGroup.visible = false;
-        camera.position.set(0, 2.0, -3.0); // Maju 3 meter di depan karakter
-        playerAvatar.rotation.y = Math.PI; // Putar balik tubuh karakter agar menghadap langsung ke mata lensa kamera
+        camera.position.set(0, 2.0, -3.0); 
+        playerAvatar.rotation.y = Math.PI; 
     }
 };
 
@@ -291,7 +288,7 @@ const weaponGroup = new THREE.Group();
 const barrelMesh = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.6), new THREE.MeshBasicMaterial({ color: 0x222222 }));
 weaponGroup.add(barrelMesh); camera.add(weaponGroup); 
 
-// GAME MANAGER UTK KONTROL UTAMA
+// GAME MANAGER
 class GameManager {
     constructor() {
         this.gameState = 'MENU';
@@ -321,18 +318,18 @@ class GameManager {
         });
 
         window.addEventListener('keydown', (e) => {
-            const k = e.key.toLowerCase();
-            
-            // LOGIKA PEMBACAAN TOMBOL KAMERA F5
+            // FIXED PENGAMAN KAMERA F5
             if (e.key === 'F5') {
-                e.preventDefault(); // Mencegah browser melakukan reload bawaan windows saat menekan F5
-                if (this.gameState === 'PLAYING') {
-                    STATE.cameraMode = (STATE.cameraMode + 1) % 3; // Berputar dari mode 0 -> 1 -> 2 -> kembali ke 0
+                e.preventDefault(); 
+                // Pastikan kamera hanya berganti JIKA game sedang dalam mode bermain (bukan di menu/gameover)
+                if (this.gameState === 'PLAYING' && playerAvatar) {
+                    STATE.cameraMode = (STATE.cameraMode + 1) % 3; 
                     updateCameraViewMode();
                 }
                 return;
             }
 
+            const k = e.key.toLowerCase();
             if (k === 'o') { this.toggleSettingOverlay(); return; }
             if (this.gameState !== 'PLAYING') return;
             if (['w','a','s','d'].includes(k)) this.keys[k] = true;
@@ -358,8 +355,12 @@ class GameManager {
         document.getElementById('hud').classList.remove('hidden');
         document.getElementById('perf-debug').classList.remove('hidden');
         
-        playerGroup.position.set(0, 0, 0); // Atur posisi group player di awal lantai
-        updateCameraViewMode();
+        playerGroup.position.set(0, 0, 0); 
+        
+        // Proteksi pemanggilan view kamera saat start
+        if(playerAvatar) {
+            updateCameraViewMode();
+        }
         
         controls.lock();
         this.generateActiveWaveMonsters();
@@ -470,9 +471,7 @@ class GameManager {
     runTickUpdate() {
         if (this.gameState !== 'PLAYING' || !controls.isLocked) return;
 
-        // Simpan posisi koordinat group player lama sebelum bergerak
         this.prevPlayerPos.copy(playerGroup.position);
-        
         let moveSpeed = (this.keys.shift && this.stamina > 10) ? CONFIG.sprintSpeed : CONFIG.normalSpeed;
 
         if (this.keys.shift && (this.keys.w || this.keys.a || this.keys.s || this.keys.d)) {
@@ -482,28 +481,23 @@ class GameManager {
         }
         document.getElementById('stamina-bar').style.width = `${this.stamina}%`;
 
-        // Ambil komponen arah depan dan samping kamera horizontal (y-axis dilewati agar player tidak terbang)
         const forwardDir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
         forwardDir.y = 0; forwardDir.normalize();
         
         const rightDir = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
         rightDir.y = 0; rightDir.normalize();
 
-        // Jalankan pergerakan translasi pada kontainer playerGroup utama
         if (this.keys.w) playerGroup.position.addScaledVector(forwardDir, moveSpeed);
         if (this.keys.s) playerGroup.position.addScaledVector(forwardDir, -moveSpeed);
         if (this.keys.a) playerGroup.position.addScaledVector(rightDir, -moveSpeed);
         if (this.keys.d) playerGroup.position.addScaledVector(rightDir, moveSpeed);
 
-        // Batasi ruang gerak map sesuai limit dunia
         playerGroup.position.x = Math.max(-CONFIG.mapLimit, Math.min(CONFIG.mapLimit, playerGroup.position.x));
         playerGroup.position.z = Math.max(-CONFIG.mapLimit, Math.min(CONFIG.mapLimit, playerGroup.position.z));
         
-        // Selaraskan letak kamera global mengikuti posisi gerak group player utama
         camera.position.x = playerGroup.position.x;
         camera.position.z = playerGroup.position.z;
 
-        // Jika dalam mode Third-Person Back, paksa tubuh avatar menghadap ke arah pandangan kamera horizontal
         if (STATE.cameraMode === 1 && playerAvatar) {
             const targetRotation = Math.atan2(forwardDir.x, forwardDir.z);
             playerAvatar.rotation.y = targetRotation;
