@@ -1,5 +1,5 @@
 // ============================================================================
-// SYSTEM ENGINE CONFIGURATIONS V1.9.1 (F5 BUG FIX & SAFETY LOADER GUARD)
+// SYSTEM ENGINE CONFIGURATIONS V1.9.2 (F5 & UNLOCK EVENT GUARD FIX)
 // ============================================================================
 const CONFIG = {
     mapWidth: 1500,
@@ -90,7 +90,6 @@ gltfLoader.load(
         playBtn.removeAttribute('disabled');
         document.getElementById('loader-status').innerText = "Asset: Adventurer Ready";
         
-        // POSISIKAN INTEGRASI AWAL SETELAH MODEL BENAR-BENAR SELESAI DIMUAT
         updateCameraViewMode();
     },
     (xhr) => {
@@ -108,9 +107,8 @@ gltfLoader.load(
     }
 );
 
-// FIX FIX: MENAMBAHKAN VALIDASI PENGAMAN AGAR TIDAK CRASH JIKA AVATAR BELUM READY
+// FUNGSI UPDATE VISUAL KAMERA
 const updateCameraViewMode = () => {
-    // PROTEKSI UTAMA: Jangan eksekusi fungsi jika model 3D belum selesai masuk ke scene!
     if (!playerAvatar) return; 
 
     camera.position.set(0, 0, 0);
@@ -288,6 +286,9 @@ const weaponGroup = new THREE.Group();
 const barrelMesh = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.6), new THREE.MeshBasicMaterial({ color: 0x222222 }));
 weaponGroup.add(barrelMesh); camera.add(weaponGroup); 
 
+// GLOBAL LOCK GUARD CONTROLLER
+let isSwitchingCameraLock = false;
+
 // GAME MANAGER
 class GameManager {
     constructor() {
@@ -317,19 +318,34 @@ class GameManager {
             }
         });
 
+        // LOCK CONTROLS GUARD: Menghentikan paksaan keluar menu akibat penekanan F5
+        controls.addEventListener('unlock', () => {
+            if (isSwitchingCameraLock) {
+                setTimeout(() => { controls.lock(); }, 10);
+                isSwitchingCameraLock = false;
+            } else {
+                if (this.gameState === 'PLAYING') {
+                    this.toggleSettingOverlay();
+                }
+            }
+        });
+
         window.addEventListener('keydown', (e) => {
-            // FIXED PENGAMAN KAMERA F5
-            if (e.key === 'F5') {
+            const k = e.key.toLowerCase();
+            
+            // DUKUNGAN GANDA: Bisa [F5] atau Tombol [V] untuk ganti kamera
+            if (e.key === 'F5' || k === 'v') {
                 e.preventDefault(); 
-                // Pastikan kamera hanya berganti JIKA game sedang dalam mode bermain (bukan di menu/gameover)
                 if (this.gameState === 'PLAYING' && playerAvatar) {
+                    isSwitchingCameraLock = true; 
                     STATE.cameraMode = (STATE.cameraMode + 1) % 3; 
                     updateCameraViewMode();
+                    
+                    if(!controls.isLocked) controls.lock();
                 }
                 return;
             }
 
-            const k = e.key.toLowerCase();
             if (k === 'o') { this.toggleSettingOverlay(); return; }
             if (this.gameState !== 'PLAYING') return;
             if (['w','a','s','d'].includes(k)) this.keys[k] = true;
@@ -357,7 +373,6 @@ class GameManager {
         
         playerGroup.position.set(0, 0, 0); 
         
-        // Proteksi pemanggilan view kamera saat start
         if(playerAvatar) {
             updateCameraViewMode();
         }
