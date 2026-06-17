@@ -18,10 +18,9 @@ let STATE = {
     fps: 60,
     mouseSensitivity: 0.002, 
     isAdaptiveActive: true,
-    cameraMode: 0 // 0: First-Person, 1: Third-Person Back, 2: Third-Person Front
+    cameraMode: 0
 };
 
-// INITIALIZE SCENE
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 400);
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
@@ -30,12 +29,10 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.BasicShadowMap;
 document.body.appendChild(renderer.domElement);
 
-// KONTROL UTAMA & GROUP PLAYER UTK STRUKTUR F5
 const controls = new THREE.PointerLockControls(camera, renderer.domElement);
 const playerGroup = new THREE.Group(); 
 scene.add(playerGroup);
 
-// SENTER UTAMA
 const flashlight = new THREE.SpotLight(0xffffff, 5, 75, Math.PI / 6, 0.5, 1.2);
 flashlight.castShadow = true;
 flashlight.shadow.mapSize.width = 512;  
@@ -45,23 +42,62 @@ flashlight.target.position.set(0, 0, -1);
 camera.add(flashlight.target);
 scene.add(camera);
 
-// AMBIENT LIGHT
 const ambientLight = new THREE.AmbientLight(0x111111);
 scene.add(ambientLight);
 
-// FLOOR MESH
 const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(1600, 1600), 
     new THREE.MeshStandardMaterial({ color: 0x030603, roughness: 1.0 })
 );
 floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
 
-// UTILITY MODEL AVATAR & ANIMASI
 let playerAvatar = null;
 let mixer = null; 
 const clock = new THREE.Clock();
 
-// GLTF LOADER FOR PLAYER AVATAR
+// INITIALIZE WEAPON MESH (harus sebelum gltfLoader callback)
+const weaponGroup = new THREE.Group();
+const barrelMesh = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.6), new THREE.MeshBasicMaterial({ color: 0x222222 }));
+weaponGroup.add(barrelMesh); camera.add(weaponGroup);
+
+// FUNGSI UPDATE VISUAL KAMERA - FIX: tidak sentuh lock, posisi relatif ke playerGroup
+const updateCameraViewMode = () => {
+    if (!playerAvatar) return;
+
+    playerAvatar.rotation.set(0, 0, 0);
+    weaponGroup.position.set(0.25, -0.25, -0.5);
+
+    if (STATE.cameraMode === 0) {
+        // First-Person: controls yang atur posisi XZ, kita hanya reset Y
+        playerAvatar.visible = false;
+        weaponGroup.visible = true;
+        // Biarkan PointerLockControls yang manage posisi kamera
+        // Hanya pastikan Y sesuai tinggi mata
+        camera.position.y = playerGroup.position.y + 1.8;
+    } 
+    else if (STATE.cameraMode === 1) {
+        // Third-Person Back
+        playerAvatar.visible = true;
+        weaponGroup.visible = false;
+        camera.position.set(
+            playerGroup.position.x,
+            playerGroup.position.y + 2.3,
+            playerGroup.position.z + 3.5
+        );
+    } 
+    else if (STATE.cameraMode === 2) {
+        // Third-Person Front
+        playerAvatar.visible = true;
+        weaponGroup.visible = false;
+        camera.position.set(
+            playerGroup.position.x,
+            playerGroup.position.y + 2.0,
+            playerGroup.position.z - 3.0
+        );
+        playerAvatar.rotation.y = Math.PI;
+    }
+};
+
 const gltfLoader = new THREE.GLTFLoader();
 gltfLoader.load(
     './Adventurer.glb',
@@ -106,32 +142,6 @@ gltfLoader.load(
         document.getElementById('btn-play-normal').removeAttribute('disabled');
     }
 );
-
-// FUNGSI UPDATE VISUAL KAMERA
-const updateCameraViewMode = () => {
-    if (!playerAvatar) return; 
-
-    camera.position.set(0, 0, 0);
-    playerAvatar.rotation.set(0, 0, 0);
-    weaponGroup.position.set(0.25, -0.25, -0.5); 
-
-    if (STATE.cameraMode === 0) {
-        playerAvatar.visible = false; 
-        weaponGroup.visible = true;
-        camera.position.set(0, 1.8, 0); 
-    } 
-    else if (STATE.cameraMode === 1) {
-        playerAvatar.visible = true; 
-        weaponGroup.visible = false; 
-        camera.position.set(0, 2.3, 3.5); 
-    } 
-    else if (STATE.cameraMode === 2) {
-        playerAvatar.visible = true;
-        weaponGroup.visible = false;
-        camera.position.set(0, 2.0, -3.0); 
-        playerAvatar.rotation.y = Math.PI; 
-    }
-};
 
 // ============================================================================
 // ADAPTIVE CHUNK SYSTEM MODULE (10x10)
@@ -281,14 +291,6 @@ const runPerformanceAutoThrottling = () => {
     }
 };
 
-// INITIALIZE WEAPON MESH
-const weaponGroup = new THREE.Group();
-const barrelMesh = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.6), new THREE.MeshBasicMaterial({ color: 0x222222 }));
-weaponGroup.add(barrelMesh); camera.add(weaponGroup); 
-
-// GLOBAL LOCK GUARD CONTROLLER
-let isSwitchingCameraLock = false;
-
 // GAME MANAGER
 class GameManager {
     constructor() {
@@ -318,30 +320,26 @@ class GameManager {
             }
         });
 
-        // LOCK CONTROLS GUARD: Menghentikan paksaan keluar menu akibat penekanan F5
+        // FIX: Hapus isSwitchingCameraLock sepenuhnya
+        // Unlock event hanya buka setting jika state PLAYING
         controls.addEventListener('unlock', () => {
-            if (isSwitchingCameraLock) {
-                setTimeout(() => { controls.lock(); }, 10);
-                isSwitchingCameraLock = false;
-            } else {
-                if (this.gameState === 'PLAYING') {
-                    this.toggleSettingOverlay();
-                }
+            if (this.gameState === 'PLAYING') {
+                this.toggleSettingOverlay();
             }
         });
 
         window.addEventListener('keydown', (e) => {
             const k = e.key.toLowerCase();
             
-            // DUKUNGAN GANDA: Bisa [F5] atau Tombol [V] untuk ganti kamera
+            // FIX: F5/V hanya ganti mode, TIDAK sentuh controls.lock sama sekali
             if (e.key === 'F5' || k === 'v') {
-                e.preventDefault(); 
+                e.preventDefault();
+                e.stopPropagation();
+                
                 if (this.gameState === 'PLAYING' && playerAvatar) {
-                    isSwitchingCameraLock = true; 
                     STATE.cameraMode = (STATE.cameraMode + 1) % 3; 
                     updateCameraViewMode();
-                    
-                    if(!controls.isLocked) controls.lock();
+                    // TIDAK ada controls.lock() atau controls.unlock() di sini
                 }
                 return;
             }
@@ -510,8 +508,27 @@ class GameManager {
         playerGroup.position.x = Math.max(-CONFIG.mapLimit, Math.min(CONFIG.mapLimit, playerGroup.position.x));
         playerGroup.position.z = Math.max(-CONFIG.mapLimit, Math.min(CONFIG.mapLimit, playerGroup.position.z));
         
-        camera.position.x = playerGroup.position.x;
-        camera.position.z = playerGroup.position.z;
+        // FIX: Sinkronisasi posisi kamera ke playerGroup setiap frame
+        if (STATE.cameraMode === 0) {
+            // First-person: ikutin playerGroup posisi X/Z, Y tetap tinggi mata
+            camera.position.x = playerGroup.position.x;
+            camera.position.z = playerGroup.position.z;
+            camera.position.y = playerGroup.position.y + 1.8;
+        } else if (STATE.cameraMode === 1) {
+            // Third-person back: kamera di belakang avatar
+            const backOffset = new THREE.Vector3(0, 0, 3.5).applyQuaternion(camera.quaternion);
+            backOffset.y = 0;
+            camera.position.x = playerGroup.position.x + backOffset.x;
+            camera.position.z = playerGroup.position.z + backOffset.z;
+            camera.position.y = playerGroup.position.y + 2.3;
+        } else if (STATE.cameraMode === 2) {
+            // Third-person front: kamera di depan avatar
+            const frontOffset = new THREE.Vector3(0, 0, -3.0).applyQuaternion(camera.quaternion);
+            frontOffset.y = 0;
+            camera.position.x = playerGroup.position.x + frontOffset.x;
+            camera.position.z = playerGroup.position.z + frontOffset.z;
+            camera.position.y = playerGroup.position.y + 2.0;
+        }
 
         if (STATE.cameraMode === 1 && playerAvatar) {
             const targetRotation = Math.atan2(forwardDir.x, forwardDir.z);
