@@ -55,12 +55,10 @@ let playerAvatar = null;
 let mixer = null; 
 const clock = new THREE.Clock();
 
-// INITIALIZE WEAPON MESH (harus sebelum gltfLoader callback)
 const weaponGroup = new THREE.Group();
 const barrelMesh = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.6), new THREE.MeshBasicMaterial({ color: 0x222222 }));
 weaponGroup.add(barrelMesh); camera.add(weaponGroup);
 
-// FUNGSI UPDATE VISUAL KAMERA - FIX: tidak sentuh lock, posisi relatif ke playerGroup
 const updateCameraViewMode = () => {
     if (!playerAvatar) return;
 
@@ -68,15 +66,11 @@ const updateCameraViewMode = () => {
     weaponGroup.position.set(0.25, -0.25, -0.5);
 
     if (STATE.cameraMode === 0) {
-        // First-Person: controls yang atur posisi XZ, kita hanya reset Y
         playerAvatar.visible = false;
         weaponGroup.visible = true;
-        // Biarkan PointerLockControls yang manage posisi kamera
-        // Hanya pastikan Y sesuai tinggi mata
         camera.position.y = playerGroup.position.y + 1.8;
     } 
     else if (STATE.cameraMode === 1) {
-        // Third-Person Back
         playerAvatar.visible = true;
         weaponGroup.visible = false;
         camera.position.set(
@@ -86,7 +80,6 @@ const updateCameraViewMode = () => {
         );
     } 
     else if (STATE.cameraMode === 2) {
-        // Third-Person Front
         playerAvatar.visible = true;
         weaponGroup.visible = false;
         camera.position.set(
@@ -234,7 +227,6 @@ const updateBuildings = (pX, pZ) => {
     });
 };
 
-// MONSTER POOLING SYSTEM
 class PooledMonster {
     constructor() {
         this.mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 3, 4), new THREE.MeshBasicMaterial({ color: 0xaa1111 }));
@@ -265,7 +257,6 @@ class PooledMonster {
 const monsterPool = [];
 for (let i = 0; i < 50; i++) { monsterPool.push(new PooledMonster()); }
 
-// PROFILING AUTO THROTTLING SYSTEM
 let frameCount = 0, lastTime = performance.now();
 const runPerformanceAutoThrottling = () => {
     if(!STATE.isAdaptiveActive) return;
@@ -291,14 +282,12 @@ const runPerformanceAutoThrottling = () => {
     }
 };
 
-// GAME MANAGER
 class GameManager {
     constructor() {
         this.gameState = 'MENU';
         this.hp = 100; this.stamina = 100; this.ammo = 30; this.maxAmmo = 30; this.wave = 1; this.kills = 0;
         this.keys = { w: false, a: false, s: false, d: false, shift: false };
         this.prevPlayerPos = new THREE.Vector3();
-
         this.setupEventListeners();
     }
 
@@ -320,8 +309,6 @@ class GameManager {
             }
         });
 
-        // FIX: Hapus isSwitchingCameraLock sepenuhnya
-        // Unlock event hanya buka setting jika state PLAYING
         controls.addEventListener('unlock', () => {
             if (this.gameState === 'PLAYING') {
                 this.toggleSettingOverlay();
@@ -330,16 +317,12 @@ class GameManager {
 
         window.addEventListener('keydown', (e) => {
             const k = e.key.toLowerCase();
-            
-            // FIX: F5/V hanya ganti mode, TIDAK sentuh controls.lock sama sekali
-            if (e.key === 'F5' || k === 'v') {
-                e.preventDefault();
-                e.stopPropagation();
-                
+
+            // TOMBOL 5 UNTUK GANTI KAMERA
+            if (k === '5') {
                 if (this.gameState === 'PLAYING' && playerAvatar) {
-                    STATE.cameraMode = (STATE.cameraMode + 1) % 3; 
+                    STATE.cameraMode = (STATE.cameraMode + 1) % 3;
                     updateCameraViewMode();
-                    // TIDAK ada controls.lock() atau controls.unlock() di sini
                 }
                 return;
             }
@@ -370,11 +353,7 @@ class GameManager {
         document.getElementById('perf-debug').classList.remove('hidden');
         
         playerGroup.position.set(0, 0, 0); 
-        
-        if(playerAvatar) {
-            updateCameraViewMode();
-        }
-        
+        if(playerAvatar) updateCameraViewMode();
         controls.lock();
         this.generateActiveWaveMonsters();
     }
@@ -507,22 +486,19 @@ class GameManager {
 
         playerGroup.position.x = Math.max(-CONFIG.mapLimit, Math.min(CONFIG.mapLimit, playerGroup.position.x));
         playerGroup.position.z = Math.max(-CONFIG.mapLimit, Math.min(CONFIG.mapLimit, playerGroup.position.z));
-        
-        // FIX: Sinkronisasi posisi kamera ke playerGroup setiap frame
+
+        // SINKRONISASI KAMERA KE PLAYERGROUP SETIAP FRAME
         if (STATE.cameraMode === 0) {
-            // First-person: ikutin playerGroup posisi X/Z, Y tetap tinggi mata
             camera.position.x = playerGroup.position.x;
             camera.position.z = playerGroup.position.z;
             camera.position.y = playerGroup.position.y + 1.8;
         } else if (STATE.cameraMode === 1) {
-            // Third-person back: kamera di belakang avatar
             const backOffset = new THREE.Vector3(0, 0, 3.5).applyQuaternion(camera.quaternion);
             backOffset.y = 0;
             camera.position.x = playerGroup.position.x + backOffset.x;
             camera.position.z = playerGroup.position.z + backOffset.z;
             camera.position.y = playerGroup.position.y + 2.3;
         } else if (STATE.cameraMode === 2) {
-            // Third-person front: kamera di depan avatar
             const frontOffset = new THREE.Vector3(0, 0, -3.0).applyQuaternion(camera.quaternion);
             frontOffset.y = 0;
             camera.position.x = playerGroup.position.x + frontOffset.x;
@@ -554,16 +530,11 @@ class GameManager {
 
 const gameManager = new GameManager();
 
-// MASTER RENDER LOOP
 const masterLoop = () => {
     requestAnimationFrame(masterLoop);
-    
     const delta = clock.getDelta();
     if (mixer) mixer.update(delta);
-
-    if (gameManager.gameState === 'PLAYING') {
-        runPerformanceAutoThrottling();
-    }
+    if (gameManager.gameState === 'PLAYING') runPerformanceAutoThrottling();
     gameManager.runTickUpdate();
     renderer.render(scene, camera);
 };
