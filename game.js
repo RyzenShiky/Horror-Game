@@ -1,5 +1,5 @@
 // ============================================================================
-// SYSTEM ENGINE CONFIGURATIONS V1.8.0 (GLTF INTEGRATION CORE)
+// SYSTEM ENGINE CONFIGURATIONS V1.9.0 (F5 MULTI-VIEW & RETRO COMPATIBLE)
 // ============================================================================
 const CONFIG = {
     mapWidth: 1500,
@@ -17,10 +17,11 @@ let STATE = {
     maxActiveAICap: 25,         
     fps: 60,
     mouseSensitivity: 0.002, 
-    isAdaptiveActive: true
+    isAdaptiveActive: true,
+    cameraMode: 0 // 0: First-Person, 1: Third-Person Back, 2: Third-Person Front
 };
 
-// INITIALIZE SCENE & CAMERA
+// INITIALIZE SCENE
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 400);
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
@@ -29,9 +30,12 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.BasicShadowMap;
 document.body.appendChild(renderer.domElement);
 
+// KONTROL UTAMA & GROUP PLAYER UTK STRUKTUR F5
 const controls = new THREE.PointerLockControls(camera, renderer.domElement);
+const playerGroup = new THREE.Group(); 
+scene.add(playerGroup);
 
-// LIGHTING SYSTEM
+// SENTER UTAMA (Tetap menempel di kamera agar arah cahayanya mengikuti pandangan mata)
 const flashlight = new THREE.SpotLight(0xffffff, 5, 75, Math.PI / 6, 0.5, 1.2);
 flashlight.castShadow = true;
 flashlight.shadow.mapSize.width = 512;  
@@ -41,7 +45,7 @@ flashlight.target.position.set(0, 0, -1);
 camera.add(flashlight.target);
 scene.add(camera);
 
-// Tambahkan sedikit ambient light agar model 3D tidak hitam pekat saat senter mati
+// AMBIENT LIGHT
 const ambientLight = new THREE.AmbientLight(0x111111);
 scene.add(ambientLight);
 
@@ -52,26 +56,22 @@ const floor = new THREE.Mesh(
 );
 floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
 
-// GLOBAL VARIABLE UNTUK MODEL AVATAR & ANIMASI
+// UTILITY MODEL AVATAR & ANIMASI
 let playerAvatar = null;
-let mixer = null; // Digunakan jika file .glb memiliki komponen animasi pergerakan
+let mixer = null; 
 const clock = new THREE.Clock();
 
-// GLTF LOADER MANAGER
+// GLTF LOADER FOR PLAYER AVATAR
 const gltfLoader = new THREE.GLTFLoader();
 gltfLoader.load(
-    './Adventurer.glb', // Jalur lokasi file model 3D kamu
+    './Adventurer.glb',
     (gltf) => {
         playerAvatar = gltf.scene;
-        
-        // Atur skala model jika terlalu besar/kecil (sesuaikan angka ini nanti jika perlu)
         playerAvatar.scale.set(1, 1, 1); 
         
-        // Karena game ini FPS (First Person), kita posisikan model sedikit di bawah/belakang kamera
-        // Agar bayangan tubuhnya tetap terlihat di tanah, atau bagian tangan terlihat memegang senjata.
-        playerAvatar.position.set(0, -1.8, -0.2); 
+        // Posisikan pusat poros kaki model tepat di dasar tanah (y = 0)
+        playerAvatar.position.set(0, 0, 0); 
         
-        // Aktifkan fitur bayangan untuk seluruh bagian tubuh avatar
         playerAvatar.traverse((child) => {
             if (child.isMesh) {
                 child.castShadow = true;
@@ -79,25 +79,25 @@ gltfLoader.load(
             }
         });
 
-        // Tempelkan avatar ke kamera player agar posisinya mengikuti kamera secara real-time
-        camera.add(playerAvatar);
+        // Masukkan model avatar ke kontainer playerGroup (bukan langsung ditempel ke kamera)
+        // Cara ini wajib digunakan agar kita bisa memindahkan kamera menjauhi tubuh karakter saat F5
+        playerGroup.add(playerAvatar);
 
-        // Pengaturan Animasi (Jika ada animasi walk/idle di file .glb kamu)
         if (gltf.animations && gltf.animations.length > 0) {
             mixer = new THREE.AnimationMixer(playerAvatar);
-            // Mainkan animasi pertama secara default (biasanya Idle)
             const action = mixer.clipAction(gltf.animations[0]);
             action.play();
         }
 
-        // Aktifkan tombol bermain setelah loading selesai
         const playBtn = document.getElementById('btn-play-normal');
         playBtn.innerText = "START SURVIVAL";
         playBtn.removeAttribute('disabled');
         document.getElementById('loader-status').innerText = "Asset: Adventurer Ready";
+        
+        // Inisialisasi awal posisi kamera pertama kali
+        updateCameraViewMode();
     },
     (xhr) => {
-        // Tampilkan persentase loading model di UI
         const percent = Math.round((xhr.loaded / xhr.total) * 100);
         document.getElementById('btn-play-normal').innerText = `LOADING MODEL (${percent}%)`;
     },
@@ -107,6 +107,36 @@ gltfLoader.load(
         document.getElementById('btn-play-normal').removeAttribute('disabled');
     }
 );
+
+// FUNGSI UTAMA: MENGATUR POSISI DAN ROTASI KAMERA BERDASARKAN MODE F5
+const updateCameraViewMode = () => {
+    if (!playerAvatar) return;
+
+    // Setel ulang semua rotasi internal objek kamera pembantu
+    camera.position.set(0, 0, 0);
+    playerAvatar.rotation.set(0, 0, 0);
+    weaponGroup.position.set(0.25, -0.25, -0.5); // Reset letak senjata default FPS
+
+    if (STATE.cameraMode === 0) {
+        // 0: FIRST PERSON VIEW
+        playerAvatar.visible = false; // Sembunyikan badan agar kepala kita tidak menutupi kamera sendiri
+        weaponGroup.visible = true;
+        camera.position.set(0, 1.8, 0); // Mata kamera ada di atas kepala model
+    } 
+    else if (STATE.cameraMode === 1) {
+        // 1: THIRD PERSON BACK (Kamera di belakang punggung)
+        playerAvatar.visible = true; 
+        weaponGroup.visible = false; // Sembunyikan kotak moncong senjata primitif lama agar rapi
+        camera.position.set(0, 2.3, 3.5); // Mundur 3.5 meter dan sedikit ke atas kepala
+    } 
+    else if (STATE.cameraMode === 2) {
+        // 2: THIRD PERSON FRONT (Kamera menghadap wajah skin karakter)
+        playerAvatar.visible = true;
+        weaponGroup.visible = false;
+        camera.position.set(0, 2.0, -3.0); // Maju 3 meter di depan karakter
+        playerAvatar.rotation.y = Math.PI; // Putar balik tubuh karakter agar menghadap langsung ke mata lensa kamera
+    }
+};
 
 // ============================================================================
 // ADAPTIVE CHUNK SYSTEM MODULE (10x10)
@@ -199,7 +229,7 @@ const updateBuildings = (pX, pZ) => {
     });
 };
 
-// MONSTER POOLING
+// MONSTER POOLING SYSTEM
 class PooledMonster {
     constructor() {
         this.mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 3, 4), new THREE.MeshBasicMaterial({ color: 0xaa1111 }));
@@ -256,14 +286,12 @@ const runPerformanceAutoThrottling = () => {
     }
 };
 
-// WEAPON CONFIG
+// INITIALIZE WEAPON MESH
 const weaponGroup = new THREE.Group();
 const barrelMesh = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.6), new THREE.MeshBasicMaterial({ color: 0x222222 }));
 weaponGroup.add(barrelMesh); camera.add(weaponGroup); 
-// Menyesuaikan posisi senjata agar pas di samping kanan pandangan mata (FPS style)
-weaponGroup.position.set(0.25, -0.25, -0.5);
 
-// GAME MANAGER
+// GAME MANAGER UTK KONTROL UTAMA
 class GameManager {
     constructor() {
         this.gameState = 'MENU';
@@ -294,6 +322,17 @@ class GameManager {
 
         window.addEventListener('keydown', (e) => {
             const k = e.key.toLowerCase();
+            
+            // LOGIKA PEMBACAAN TOMBOL KAMERA F5
+            if (e.key === 'F5') {
+                e.preventDefault(); // Mencegah browser melakukan reload bawaan windows saat menekan F5
+                if (this.gameState === 'PLAYING') {
+                    STATE.cameraMode = (STATE.cameraMode + 1) % 3; // Berputar dari mode 0 -> 1 -> 2 -> kembali ke 0
+                    updateCameraViewMode();
+                }
+                return;
+            }
+
             if (k === 'o') { this.toggleSettingOverlay(); return; }
             if (this.gameState !== 'PLAYING') return;
             if (['w','a','s','d'].includes(k)) this.keys[k] = true;
@@ -318,7 +357,10 @@ class GameManager {
         document.getElementById('game-over-screen').classList.add('hidden');
         document.getElementById('hud').classList.remove('hidden');
         document.getElementById('perf-debug').classList.remove('hidden');
-        camera.position.set(0, 1.8, 0); 
+        
+        playerGroup.position.set(0, 0, 0); // Atur posisi group player di awal lantai
+        updateCameraViewMode();
+        
         controls.lock();
         this.generateActiveWaveMonsters();
     }
@@ -357,8 +399,8 @@ class GameManager {
         monsterPool.forEach(m => m.despawn());
         for (let i = 0; i < STATE.maxActiveAICap; i++) {
             const angle = Math.random() * Math.PI * 2;
-            const sX = camera.position.x + Math.cos(angle) * (60 + Math.random()*60);
-            const sZ = camera.position.z + Math.sin(angle) * (60 + Math.random()*60);
+            const sX = playerGroup.position.x + Math.cos(angle) * (60 + Math.random()*60);
+            const sZ = playerGroup.position.z + Math.sin(angle) * (60 + Math.random()*60);
             monsterPool[i].spawn(sX, sZ);
         }
     }
@@ -381,7 +423,7 @@ class GameManager {
                 if (monster.hp <= 0) {
                     this.kills++;
                     const angle = Math.random() * Math.PI * 2;
-                    monster.spawn(camera.position.x + Math.cos(angle)*100, camera.position.z + Math.sin(angle)*100);
+                    monster.spawn(playerGroup.position.x + Math.cos(angle)*100, playerGroup.position.z + Math.sin(angle)*100);
                 }
             }
         }
@@ -396,14 +438,14 @@ class GameManager {
     }
 
     handleSphereCollisions() {
-        const px = camera.position.x;
-        const pz = camera.position.z;
+        const px = playerGroup.position.x;
+        const pz = playerGroup.position.z;
 
         monsterPool.forEach(m => {
             if (!m.isActive || m.isSleeping) return;
             const dist = Math.sqrt((px - m.mesh.position.x)**2 + (pz - m.mesh.position.z)**2);
             if (dist < m.collisionRadius) {
-                camera.position.set(this.prevPlayerPos.x, camera.position.y, this.prevPlayerPos.z);
+                playerGroup.position.set(this.prevPlayerPos.x, playerGroup.position.y, this.prevPlayerPos.z);
                 this.hp = Math.max(0, this.hp - 0.25);
                 document.getElementById('hp-txt').innerText = Math.ceil(this.hp);
                 document.getElementById('hp-bar').style.width = `${this.hp}%`;
@@ -415,7 +457,7 @@ class GameManager {
         POI_STRUCTURES.forEach(b => {
             if (!b.mesh) return;
             const dist = Math.sqrt((px - b.pos.x)**2 + (pz - b.pos.z)**2);
-            if (dist < b.rad) camera.position.set(this.prevPlayerPos.x, camera.position.y, this.prevPlayerPos.z);
+            if (dist < b.rad) playerGroup.position.set(this.prevPlayerPos.x, playerGroup.position.y, this.prevPlayerPos.z);
         });
     }
 
@@ -428,7 +470,9 @@ class GameManager {
     runTickUpdate() {
         if (this.gameState !== 'PLAYING' || !controls.isLocked) return;
 
-        this.prevPlayerPos.copy(camera.position);
+        // Simpan posisi koordinat group player lama sebelum bergerak
+        this.prevPlayerPos.copy(playerGroup.position);
+        
         let moveSpeed = (this.keys.shift && this.stamina > 10) ? CONFIG.sprintSpeed : CONFIG.normalSpeed;
 
         if (this.keys.shift && (this.keys.w || this.keys.a || this.keys.s || this.keys.d)) {
@@ -438,29 +482,47 @@ class GameManager {
         }
         document.getElementById('stamina-bar').style.width = `${this.stamina}%`;
 
-        if (this.keys.w) controls.moveForward(moveSpeed);
-        if (this.keys.s) controls.moveForward(-moveSpeed);
-        if (this.keys.a) controls.moveRight(-moveSpeed);
-        if (this.keys.d) controls.moveRight(moveSpeed);
+        // Ambil komponen arah depan dan samping kamera horizontal (y-axis dilewati agar player tidak terbang)
+        const forwardDir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        forwardDir.y = 0; forwardDir.normalize();
+        
+        const rightDir = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+        rightDir.y = 0; rightDir.normalize();
 
-        camera.position.x = Math.max(-CONFIG.mapLimit, Math.min(CONFIG.mapLimit, camera.position.x));
-        camera.position.z = Math.max(-CONFIG.mapLimit, Math.min(CONFIG.mapLimit, camera.position.z));
-        camera.position.y = 1.8;
+        // Jalankan pergerakan translasi pada kontainer playerGroup utama
+        if (this.keys.w) playerGroup.position.addScaledVector(forwardDir, moveSpeed);
+        if (this.keys.s) playerGroup.position.addScaledVector(forwardDir, -moveSpeed);
+        if (this.keys.a) playerGroup.position.addScaledVector(rightDir, -moveSpeed);
+        if (this.keys.d) playerGroup.position.addScaledVector(rightDir, moveSpeed);
 
-        chunkManager.updateGrid(camera.position.x, camera.position.z);
-        updateBuildings(camera.position.x, camera.position.z);
+        // Batasi ruang gerak map sesuai limit dunia
+        playerGroup.position.x = Math.max(-CONFIG.mapLimit, Math.min(CONFIG.mapLimit, playerGroup.position.x));
+        playerGroup.position.z = Math.max(-CONFIG.mapLimit, Math.min(CONFIG.mapLimit, playerGroup.position.z));
+        
+        // Selaraskan letak kamera global mengikuti posisi gerak group player utama
+        camera.position.x = playerGroup.position.x;
+        camera.position.z = playerGroup.position.z;
+
+        // Jika dalam mode Third-Person Back, paksa tubuh avatar menghadap ke arah pandangan kamera horizontal
+        if (STATE.cameraMode === 1 && playerAvatar) {
+            const targetRotation = Math.atan2(forwardDir.x, forwardDir.z);
+            playerAvatar.rotation.y = targetRotation;
+        }
+
+        chunkManager.updateGrid(playerGroup.position.x, playerGroup.position.z);
+        updateBuildings(playerGroup.position.x, playerGroup.position.z);
         
         let currentActiveAICount = 0;
         monsterPool.forEach(m => {
             if (m.isActive && !m.isSleeping) currentActiveAICount++;
-            m.executeAI(camera.position);
+            m.executeAI(playerGroup.position);
         });
         
         this.handleSphereCollisions();
 
         document.getElementById('three-drawcalls').innerText = `Draw Calls: ${renderer.info.render.calls}`;
         document.getElementById('three-tris').innerText = `Triangles: ${renderer.info.render.triangles}`;
-        document.getElementById('geo-info').innerText = `XYZ: ${Math.floor(camera.position.x)}, ${Math.floor(camera.position.z)} | Active AI: ${currentActiveAICount}`;
+        document.getElementById('geo-info').innerText = `XYZ: ${Math.floor(playerGroup.position.x)}, ${Math.floor(playerGroup.position.z)} | Active AI: ${currentActiveAICount}`;
     }
 }
 
@@ -470,7 +532,6 @@ const gameManager = new GameManager();
 const masterLoop = () => {
     requestAnimationFrame(masterLoop);
     
-    // Ambil delta time untuk memperbarui mixer animasi GLTF jika ada
     const delta = clock.getDelta();
     if (mixer) mixer.update(delta);
 
